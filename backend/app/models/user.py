@@ -15,3 +15,6 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     # For Telegram-based upgrade flow
     upgrade_token = Column(String, nullable=True, unique=True)
+    referral_code = Column(String, nullable=True, unique=True, index=True)
+    referred_by_user_id = Column(Integer, nullable=True)
+    referral_bonus_sites = Column(Integer, nullable=False, default=0)

@@ -22,6 +22,7 @@ class Site(Base):
     last_status = Column(String, nullable=True)  # "up" | "down" | "unknown"
     last_response_time = Column(Float, nullable=True)
     last_content_hash = Column(String, nullable=True)
+    last_content_snapshot = Column(Text, nullable=True)  # first 8000 characters of the page text
     last_checked_at = Column(DateTime, nullable=True)
 
     created_at = Column(DateTime, server_default=func.now())

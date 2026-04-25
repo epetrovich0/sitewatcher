@@ -4,6 +4,8 @@ import AuthPage from './pages/AuthPage'
 import Dashboard from './pages/Dashboard'
 import SettingsPage from './pages/SettingsPage'
 import UpgradePage from './pages/UpgradePage'
+import StatusPage from './pages/StatusPage'
+import LandingPage from './pages/LandingPage'
 
 function PrivateRoute({ children }) {
   const { user, loading } = useAuth()
@@ -24,12 +26,14 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          {/* Landing page at root */}
+          <Route path="/" element={<PublicRoute><LandingPage /></PublicRoute>} />
           <Route path="/login" element={<PublicRoute><AuthPage mode="login" /></PublicRoute>} />
           <Route path="/register" element={<PublicRoute><AuthPage mode="register" /></PublicRoute>} />
           <Route path="/dashboard" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/settings" element={<PrivateRoute><SettingsPage /></PrivateRoute>} />
           <Route path="/upgrade" element={<PrivateRoute><UpgradePage /></PrivateRoute>} />
+          <Route path="/status/:username" element={<StatusPage />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

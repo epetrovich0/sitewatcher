@@ -14,9 +14,42 @@ from app.services.telegram import (
     format_alert_slow,
     format_alert_changed,
 )
+from app.services.ai_analysis import analyze_downtime, analyze_content_diff
+from app.services.weekly_report import send_weekly_reports
 
 logger = logging.getLogger(__name__)
 scheduler = AsyncIOScheduler()
+
+
+async def _get_recent_incidents(db, site_id: int, limit: int = 5) -> list[dict]:
+    """Fetch recent downtime incidents for AI pattern analysis."""
+    week_ago = datetime.utcnow() - timedelta(days=7)
+    result = await db.execute(
+        select(CheckLog)
+        .where(
+            and_(
+                CheckLog.site_id == site_id,
+                CheckLog.is_up == False,
+                CheckLog.checked_at >= week_ago,
+            )
+        )
+        .order_by(CheckLog.checked_at.desc())
+        .limit(limit * 3)
+    )
+    raw = result.scalars().all()
+
+    incidents = []
+    seen_windows = set()
+    for check in reversed(raw):
+        window = check.checked_at.replace(minute=0, second=0, microsecond=0)
+        if window not in seen_windows:
+            seen_windows.add(window)
+            incidents.append({
+                "checked_at": check.checked_at,
+                "error": check.error_message,
+                "duration_min": check.response_time,
+            })
+    return incidents[-limit:]
 
 
 async def run_checks():
@@ -54,20 +87,34 @@ async def process_site_check(site_id: int):
         is_up = check_result["is_up"]
         response_time = check_result["response_time"]
         content_hash = check_result["content_hash"]
+        new_raw_text = check_result.get("raw_text") or ""
         error_message = check_result["error_message"]
         status_code = check_result["status_code"]
 
         prev_status = site.last_status
         prev_hash = site.last_content_hash
+        prev_snapshot = site.last_content_snapshot or ""
 
-        # Determine alert type
+        # Determine alert type and build message
         alert_type = None
         alert_text = None
 
         if not is_up and prev_status != "down":
             alert_type = "down"
             if user and user.telegram_chat_id and site.alert_on_down:
-                alert_text = format_alert_down(site.name, site.url, error_message, status_code)
+                recent_incidents = await _get_recent_incidents(db, site_id)
+                ai_insight = await analyze_downtime(
+                    site_name=site.name or site.url,
+                    site_url=site.url,
+                    error_message=error_message,
+                    status_code=status_code,
+                    recent_incidents=recent_incidents,
+                )
+                plain_alert = format_alert_down(site.name, site.url, error_message, status_code)
+                if ai_insight:
+                    alert_text = plain_alert + f"\n\n🤖 <i>{ai_insight}</i>"
+                else:
+                    alert_text = plain_alert
 
         elif is_up and prev_status == "down":
             alert_type = "recovered"
@@ -82,13 +129,31 @@ async def process_site_check(site_id: int):
                         site.name, site.url, response_time, site.response_time_threshold
                     )
 
+        # ── Content change detection ──────────────────────────────────────────
         content_changed = False
         if is_up and site.monitor_content_changes and prev_hash and content_hash:
             if prev_hash != content_hash:
                 content_changed = True
                 if not alert_type and site.alert_on_change and user and user.telegram_chat_id:
                     alert_type = "changed"
-                    alert_text = format_alert_changed(site.name, site.url)
+
+                    # Pro-only AI diff analysis
+                    if user.is_paid and prev_snapshot and new_raw_text:
+                        ai_diff = await analyze_content_diff(
+                            site_name=site.name or site.url,
+                            site_url=site.url,
+                            old_text=prev_snapshot,
+                            new_text=new_raw_text,
+                        )
+                        if ai_diff:
+                            alert_text = (
+                                format_alert_changed(site.name, site.url)
+                                + f"\n\n🔍 <i>{ai_diff}</i>"
+                            )
+                        else:
+                            alert_text = format_alert_changed(site.name, site.url)
+                    else:
+                        alert_text = format_alert_changed(site.name, site.url)
 
         # Send alert
         alert_sent = False
@@ -113,6 +178,9 @@ async def process_site_check(site_id: int):
         site.last_status = "up" if is_up else "down"
         site.last_response_time = response_time
         site.last_content_hash = content_hash
+        # Update the snapshot only when the site is up and we have text
+        if is_up and new_raw_text:
+            site.last_content_snapshot = new_raw_text[:8000]
         site.last_checked_at = datetime.utcnow()
         site.next_check_at = datetime.utcnow() + timedelta(minutes=site.check_interval)
 
@@ -121,8 +189,17 @@ async def process_site_check(site_id: int):
 
 def start_scheduler():
     scheduler.add_job(run_checks, "interval", minutes=1, id="site_checks", replace_existing=True)
+    scheduler.add_job(
+        send_weekly_reports,
+        "cron",
+        day_of_week="mon",
+        hour=9,
+        minute=0,
+        id="weekly_reports",
+        replace_existing=True,
+    )
     scheduler.start()
-    logger.info("Scheduler started")
+    logger.info("Scheduler started (checks + weekly reports)")
 
 
 def stop_scheduler():

@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_
 from pydantic import BaseModel, HttpUrl
 from app.db.database import get_db
 from app.models.site import Site
@@ -10,7 +10,10 @@ from app.models.check import CheckLog
 from app.models.user import User
 from app.api.auth import get_current_active_user
 from app.core.config import settings
+from app.services.auth import get_max_sites_for_user
 from app.services.scheduler import process_site_check
+from app.services.ai_analysis import suggest_response_threshold
+from sqlalchemy import delete as sql_delete
 
 router = APIRouter(prefix="/sites", tags=["sites"])
 
@@ -85,7 +88,7 @@ async def create_site(
     )
     count = count_result.scalar()
 
-    max_sites = settings.PAID_TIER_MAX_SITES if user.is_paid else settings.FREE_TIER_MAX_SITES
+    max_sites = get_max_sites_for_user(user)
     if count >= max_sites:
         raise HTTPException(
             status_code=403,
@@ -144,7 +147,6 @@ async def update_site(
     await db.refresh(site)
     return site_to_dict(site)
 
-
 @router.delete("/{site_id}")
 async def delete_site(
     site_id: int,
@@ -154,6 +156,10 @@ async def delete_site(
     site = await db.get(Site, site_id)
     if not site or site.user_id != user.id:
         raise HTTPException(status_code=404, detail="Site not found")
+    
+    # Delete logs first
+    await db.execute(sql_delete(CheckLog).where(CheckLog.site_id == site_id))
+    # Then delete the site itself
     await db.delete(site)
     await db.commit()
     return {"ok": True}
@@ -205,3 +211,39 @@ async def get_logs(
         }
         for l in logs
     ]
+
+
+@router.get("/{site_id}/ai-threshold")
+async def ai_suggest_threshold(
+    site_id: int,
+    user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Analyzes the site's response time history and suggests a smart alert threshold.
+    Uses local statistics (no AI tokens) for numbers; one small Groq call for phrasing.
+    """
+    site = await db.get(Site, site_id)
+    if not site or site.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    result = await db.execute(
+        select(CheckLog.response_time).where(
+            and_(
+                CheckLog.site_id == site_id,
+                CheckLog.is_up == True,
+                CheckLog.response_time != None,
+            )
+        )
+        .order_by(CheckLog.checked_at.desc())
+        .limit(50)
+    )
+    times = [row[0] for row in result.all()]
+
+    suggestion = await suggest_response_threshold(
+        site_name=site.name or site.url,
+        site_url=site.url,
+        response_times=times,
+    )
+    suggestion["current_threshold"] = site.response_time_threshold
+    return suggestion

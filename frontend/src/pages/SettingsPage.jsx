@@ -9,6 +9,11 @@ export default function SettingsPage() {
   const [telegramLink, setTelegramLink] = useState(null)
   const [loadingLink, setLoadingLink] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [referralCodeCopied, setReferralCodeCopied] = useState(false)
+  const [friendCode, setFriendCode] = useState('')
+  const [applyingCode, setApplyingCode] = useState(false)
+  const [applyMessage, setApplyMessage] = useState('')
+  const [applyError, setApplyError] = useState('')
 
   const fetchLink = async () => {
     if (!user?.upgrade_token) return
@@ -29,6 +34,33 @@ export default function SettingsPage() {
     navigator.clipboard.writeText(telegramLink)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const copyReferralCode = () => {
+    if (!user?.referral?.code) return
+    navigator.clipboard.writeText(user.referral.code)
+    setReferralCodeCopied(true)
+    setTimeout(() => setReferralCodeCopied(false), 2000)
+  }
+
+  const applyReferralCode = async (e) => {
+    e.preventDefault()
+    setApplyMessage('')
+    setApplyError('')
+    const code = friendCode.trim().toUpperCase()
+    if (!code) return
+
+    setApplyingCode(true)
+    try {
+      await api.post('/auth/me/apply-referral', { code })
+      setFriendCode('')
+      setApplyMessage('Referral applied. You and your friend got +1 site limit.')
+      await refetchUser()
+    } catch (err) {
+      setApplyError(err?.response?.data?.detail || 'Failed to apply referral code')
+    } finally {
+      setApplyingCode(false)
+    }
   }
 
   return (
@@ -59,10 +91,54 @@ export default function SettingsPage() {
               <span>{user?.limits?.max_sites}</span>
             </div>
             <div className="flex justify-between">
+              <span className="text-gray-500">Referral bonus</span>
+              <span>+{user?.referral?.bonus_sites || 0}</span>
+            </div>
+            <div className="flex justify-between">
               <span className="text-gray-500">Min check interval</span>
               <span>{user?.limits?.min_interval} min</span>
             </div>
           </div>
+        </div>
+
+        <div className="card mb-4">
+          <h2 className="font-semibold mb-2">Refer a Friend</h2>
+          <p className="text-sm text-gray-400 mb-3">
+            Invite a friend with your code. After activation, both of you get +1 site in monitoring limit.
+          </p>
+
+          <div className="flex items-center justify-between gap-2 mb-4">
+            <div className="text-sm">
+              <span className="text-gray-500 mr-2">Your code:</span>
+              <span className="font-mono text-brand-500">{user?.referral?.code || 'Loading...'}</span>
+            </div>
+            <button onClick={copyReferralCode} className="btn-ghost flex items-center gap-1 text-sm">
+              <Copy size={14} /> {referralCodeCopied ? 'Copied!' : 'Copy code'}
+            </button>
+          </div>
+
+          {!user?.referral?.referred_by_user_id && (
+            <form onSubmit={applyReferralCode} className="space-y-2">
+              <label className="text-xs text-gray-500 block">Have a friend code?</label>
+              <div className="flex gap-2">
+                <input
+                  value={friendCode}
+                  onChange={(e) => setFriendCode(e.target.value.toUpperCase())}
+                  placeholder="ENTER CODE"
+                  className="input flex-1 uppercase"
+                  maxLength={20}
+                />
+                <button className="btn-primary text-sm" disabled={applyingCode || !friendCode.trim()}>
+                  {applyingCode ? 'Applying...' : 'Apply'}
+                </button>
+              </div>
+              {applyMessage && <p className="text-xs text-green-400">{applyMessage}</p>}
+              {applyError && <p className="text-xs text-red-400">{applyError}</p>}
+            </form>
+          )}
+          {user?.referral?.referred_by_user_id && (
+            <p className="text-xs text-gray-500">Referral code already used on this account.</p>
+          )}
         </div>
 
         {/* Telegram */}
@@ -104,7 +180,7 @@ export default function SettingsPage() {
                     </button>
                   </div>
                   <p className="text-xs text-gray-600">
-                    Or send this link to @{process.env.VITE_BOT_USERNAME || 'your_bot'}
+                    Or send this link to @{import.meta.env.VITE_BOT_USERNAME || 'esitewatch_bot'}
                   </p>
                 </div>
               ) : (

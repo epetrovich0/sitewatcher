@@ -1,0 +1,24 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'     # Every 14 minutes
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Health Endpoint
+        run: |
+          echo "🌐 Pinging backend at $(date -u)"
+          
+          RESPONSE=$(curl -I -L -s -w "%{http_code}" -o /dev/null \
+            -H "User-Agent: GitHub-KeepAlive-Bot" \
+            https://sitewatch-1k5k.onrender.com/health)
+          
+          if [ "$RESPONSE" = "200" ]; then
+            echo "✅ Success (HTTP $RESPONSE)"
+          else
+            echo "⚠️  Failed (HTTP $RESPONSE) - but will try again soon"
+          fi

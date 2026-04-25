@@ -1,87 +1,36 @@
-# 🔭 SiteWatcher
+# 📡 SiteWatcher
 
-Uptime monitoring service with Telegram alerts. Built with FastAPI + React + Docker.
+> Website uptime monitoring with real-time Telegram alerts.
+
+**Live demo (frontend):** https://sitewatcher-six.vercel.app
+**Live API (backend):** https://sitewatch-1k5k.onrender.com
+
+---
 
 ## Features
 
-| Feature | Free | Pro |
-|---|---|---|
-| Monitored sites | 1 | 50 |
-| Check interval | 60 min | 1 min |
-| Up/down alerts | ✅ | ✅ |
-| Slow response alerts | ✅ | ✅ |
-| Content change detection | ❌ | ✅ |
-| Telegram integration | ✅ | ✅ |
+- **Uptime monitoring** — checks your sites every 1–60 minutes
+- **Telegram alerts** — instant notifications when a site goes down or recovers
+- **Response time tracking** — detects slow responses before users notice
+- **Content change detection** — alerts when page content changes (Pro)
+- **Check history** — full log with response times and status codes
+- **Freemium model** — free tier for 1 site, Pro for up to 50
 
 ---
 
-## Quick Start
+## Tech Stack
 
-### 1. Clone & configure
-
-```bash
-git clone <repo>
-cd sitewatcher
-cp backend/.env.example backend/.env
-```
-
-Edit `backend/.env`:
-```env
-SECRET_KEY=your-strong-random-secret
-TELEGRAM_BOT_TOKEN=your_bot_token    # from @BotFather
-FRONTEND_URL=http://localhost        # or your domain
-```
-
-### 2. Start with Docker
-
-```bash
-docker-compose up -d
-```
-
-App runs at `http://localhost` (frontend) and `http://localhost:8000` (API).
-
-### 3. Create a Telegram Bot
-
-1. Message [@BotFather](https://t.me/BotFather) on Telegram
-2. Send `/newbot` and follow the prompts
-3. Copy the token to `TELEGRAM_BOT_TOKEN` in `.env`
-
-### 4. Register the Telegram webhook
-
-After deploying to a public URL:
-
-```bash
-pip install httpx python-dotenv
-python setup_webhook.py https://your-domain.com
-```
-
-For local development, use [ngrok](https://ngrok.com/):
-```bash
-ngrok http 8000
-python setup_webhook.py https://xxxx.ngrok.io
-```
-
----
-
-## Development (hot reload)
-
-```bash
-# Backend only
-cd backend
-pip install -r requirements.txt
-cp .env.example .env  # edit as needed
-uvicorn app.main:app --reload
-
-# Frontend only
-cd frontend
-npm install
-npm run dev
-```
-
-Or with Docker Compose:
-```bash
-docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
-```
+| Layer | Technology |
+|---|---|
+| Backend | Python 3.12, FastAPI, APScheduler |
+| Database | PostgreSQL + SQLAlchemy 2.0 (async) |
+| Auth | JWT (python-jose) + bcrypt |
+| HTTP checks | httpx (async) |
+| Content diff | BeautifulSoup4 + MD5 hash |
+| Notifications | Telegram Bot API |
+| Payments | Telegram Stars |
+| Frontend | React 18, Vite, Tailwind CSS |
+| Deploy | Docker, Render.com |
 
 ---
 
@@ -90,79 +39,148 @@ docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 sitewatcher/
 ├── backend/
-│   ├── app/
-│   │   ├── api/          # FastAPI routers
-│   │   │   ├── auth.py        # Register/login/JWT
-│   │   │   ├── sites.py       # CRUD + check-now
-│   │   │   ├── telegram.py    # Webhook + bot commands
-│   │   │   └── billing.py     # Pro activation
-│   │   ├── core/
-│   │   │   └── config.py      # Settings from .env
-│   │   ├── db/
-│   │   │   └── database.py    # SQLAlchemy async setup
-│   │   ├── models/            # SQLAlchemy ORM models
-│   │   ├── services/
-│   │   │   ├── checker.py     # HTTP site checks
-│   │   │   ├── scheduler.py   # APScheduler jobs
-│   │   │   ├── telegram.py    # Alert message formatting
-│   │   │   └── auth.py        # JWT + password utils
-│   │   └── main.py            # FastAPI app
-│   ├── requirements.txt
-│   └── Dockerfile
+│   └── app/
+│       ├── api/          # FastAPI routers: auth, sites, billing, telegram
+│       ├── models/       # SQLAlchemy models: User, Site, CheckLog
+│       ├── services/     # checker, scheduler, auth, telegram
+│       └── core/         # config, settings
 ├── frontend/
-│   ├── src/
-│   │   ├── pages/         # Dashboard, Auth, Settings, Upgrade
-│   │   ├── components/    # SiteCard, AddSiteModal, StatusBadge, Logs
-│   │   ├── store/         # Auth context
-│   │   └── api.js         # Axios client
-│   ├── vite.config.js
-│   └── Dockerfile
+│   └── src/
+│       ├── pages/        # Dashboard, Auth, Settings, Upgrade
+│       └── components/   # SiteCard, AddSiteModal, Logs, Chart
 ├── docker-compose.yml
-├── docker-compose.dev.yml
-└── setup_webhook.py
+└── setup_webhook.py      # Register Telegram webhook
 ```
+
+---
+
+## Running Locally
+
+### Prerequisites
+- Docker + Docker Compose
+- Telegram Bot token (from [@BotFather](https://t.me/BotFather))
+
+### 1. Clone and configure
+
+```bash
+git clone https://github.com/epetrovich0/sitewatcher.git
+cd sitewatcher
+cp backend/.env.example backend/.env
+```
+
+Edit `backend/.env`:
+
+```env
+DATABASE_URL=postgresql+asyncpg://user:password@db:5432/sitewatcher
+SECRET_KEY=your-secret-key-here
+TELEGRAM_BOT_TOKEN=your-bot-token
+FRONTEND_URL=http://localhost:5173
+ADMIN_SECRET=your-admin-secret
+ENV=development
+```
+
+### 2. Start
+
+```bash
+docker compose up --build
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:5173 |
+| Backend API | http://localhost:8000 |
+| API Docs | http://localhost:8000/docs |
+
+### 3. Register Telegram webhook (for alerts)
+
+```bash
+export TELEGRAM_BOT_TOKEN=your-token
+python3 setup_webhook.py http://your-public-url.com
+```
+
+> For local development use [ngrok](https://ngrok.com) to expose localhost.
 
 ---
 
 ## API Overview
 
-| Endpoint | Method | Description |
-|---|---|---|
-| `/api/auth/register` | POST | Register new user |
-| `/api/auth/login` | POST | Login, get JWT |
-| `/api/auth/me` | GET | Current user + limits |
-| `/api/sites/` | GET | List user's sites |
-| `/api/sites/` | POST | Add site |
-| `/api/sites/{id}` | PATCH | Update site |
-| `/api/sites/{id}` | DELETE | Delete site |
-| `/api/sites/{id}/check-now` | POST | Trigger immediate check |
-| `/api/sites/{id}/logs` | GET | Check history |
-| `/api/telegram/webhook` | POST | Telegram bot webhook |
-| `/api/telegram/link-url` | GET | Get Telegram deep link |
-| `/api/billing/activate-pro` | POST | Activate Pro (demo) |
+```
+POST /api/auth/register     Register new user
+POST /api/auth/login        Login, returns JWT
+GET  /api/auth/me           Current user info
+
+GET  /api/sites/            List monitored sites
+POST /api/sites/            Add site (free: 1, pro: 50)
+DELETE /api/sites/{id}      Remove site
+POST /api/sites/{id}/check-now   Trigger immediate check
+GET  /api/sites/{id}/logs   Check history
+
+POST /api/billing/send-invoice       Pay with Telegram Stars
+POST /api/billing/stripe-checkout     Pay with Stripe Checkout
+POST /api/billing/admin/activate/{email}?secret=  Manual Pro activation
+```
 
 ---
 
-## Adding Real Payments
+## Monitoring Logic
 
-The `/api/billing/activate-pro` endpoint is a demo stub. To add real payments:
-
-1. **Stripe**: Add `stripe` to requirements, create a checkout session, use a Stripe webhook to call `user.is_paid = True` after successful payment.
-2. **LiqPay / YooMoney**: Same pattern — verify payment server-side, then flip the flag.
-
-The Telegram bot will automatically notify the user when Pro is activated.
+```
+Every minute → scheduler wakes up
+    → finds sites where next_check_at <= now
+    → async HTTP GET with 15s timeout
+    → saves CheckLog (status, response_time, content_hash)
+    → compares with previous status
+    → if site went DOWN → send Telegram alert
+    → if site RECOVERED → send Telegram alert
+    → if response_time > threshold → send slow alert (Pro)
+    → if content changed → send change alert (Pro)
+    → updates next_check_at = now + check_interval
+```
 
 ---
 
-## Environment Variables
+## Deployment
 
-| Variable | Default | Description |
+Both services are deployed on [Render.com](https://render.com) free tier:
+
+- **Backend** — Docker web service
+- **Frontend** — Static site (Vite build)
+- **Database** — Render PostgreSQL
+
+Required environment variables on Render:
+
+```env
+DATABASE_URL         # Render PostgreSQL internal URL (postgresql+asyncpg://...)
+SECRET_KEY           # Random string for JWT signing
+TELEGRAM_BOT_TOKEN   # From @BotFather
+FRONTEND_URL         # https://sitewatcher-six.vercel.app
+ADMIN_SECRET         # Secret for manual Pro activation
+STRIPE_SECRET_KEY    # Stripe secret key
+STRIPE_WEBHOOK_SECRET # Stripe webhook signing secret
+STRIPE_SUCCESS_URL   # Stripe success redirect URL
+STRIPE_CANCEL_URL    # Stripe cancel redirect URL
+ENV                  # production (hides /docs)
+```
+
+---
+
+## Free vs Pro
+
+| Feature | Free | Pro |
 |---|---|---|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./sitewatcher.db` | Database URL |
-| `SECRET_KEY` | — | JWT signing key (change in prod!) |
-| `TELEGRAM_BOT_TOKEN` | — | From @BotFather |
-| `FRONTEND_URL` | `http://localhost:3000` | Used in Telegram links |
-| `FREE_TIER_MAX_SITES` | `1` | Max sites on free plan |
-| `FREE_TIER_MIN_INTERVAL` | `60` | Min check interval (min) on free |
-| `PAID_TIER_MAX_SITES` | `50` | Max sites on Pro |
-| `PAID_TIER_MIN_INTERVAL` | `1` | Min check interval (min) on Pro |
+| Monitored sites | 1 | 50 |
+| Check interval | 60 min | 1 min |
+| Uptime monitoring | ✅ | ✅ |
+| Response time alerts | ✅ | ✅ |
+| Content change detection | ❌ | ✅ |
+| Telegram alerts | ✅ | ✅ |
+
+**Payment options:**
+- Telegram Stars (instant, built-in)
+- Stripe Checkout (card payment)
+
+---
+
+## License
+
+MIT
